@@ -14,10 +14,10 @@ API_HASH = os.getenv("API_HASH", "1c9b1de2d97d384d5422319bd7857992")
 HELPER_BOT_TOKEN = os.getenv("HELPER_BOT_TOKEN", "8748528444:AAG5RI8TxErzT0JkqYndjSm9xbvcVkAp77s")
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "8929445585"))
 
-# Load session string from env if available
-SESSION_STRING = os.getenv("SESSION_STRING", "")
+# Optional StringSession for persistent login
+SESSION_STRING = os.getenv("SESSION_STRING", "").strip()
 
-# Render dynamically sets PORT (defaults to 10000 on Render if unset)
+# Render assigns dynamic PORT (defaults to 10000 on Render)
 PORT = int(os.getenv("PORT", "10000"))
 
 CONFIG_FILE = "channels_config.json"
@@ -31,7 +31,7 @@ auth_state = {
     "phone_code_hash": None,
 }
 
-# Explicit clients
+# Initialise clients
 user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 helper_bot = TelegramClient("helper_bot_session", API_ID, API_HASH)
 
@@ -215,9 +215,9 @@ async def helper_admin_handler(event):
             res = await user_client.send_code_request(phone)
             auth_state["phone_code_hash"] = res.phone_code_hash
             auth_state["step"] = "waiting_code"
-            await event.reply("📩 Code requested! Send it with text to bypass filter (e.g., `HELLO 12345`):")
+            await event.reply("📩 Code requested! Send it masked with text to prevent Telegram filtering (e.g., `HELLO 12345`):")
         except Exception as e:
-            await event.reply(f"❌ Failed to send code request: {e}")
+            await event.reply(f"❌ Failed to request code: {e}")
         return
 
     if auth_state["step"] == "waiting_code":
@@ -276,14 +276,14 @@ async def start_web_server():
     print(f"[✔] Web server active on port {PORT}")
 
 
-# ================= MAIN RUNNER (PYTHON 3.14 SAFE) =================
+# ================= MAIN RUNNER =================
 async def main():
     load_channels()
 
     # 1. Start HTTP Server for Render Health Check
     await start_web_server()
 
-    # 2. Start Helper Bot using Bot Token
+    # 2. Start Helper Bot
     await helper_bot.start(bot_token=HELPER_BOT_TOKEN)
     print("[✔] Helper Bot started.")
 
@@ -310,15 +310,11 @@ async def main():
         except Exception as e:
             print(f"[!] Warning: Could not send active alert: {e}")
 
-    # Keep both running cleanly without blocking update futures
-    await asyncio.gather(
-        user_client.run_until_disconnected(),
-        helper_bot.run_until_disconnected()
-    )
+    # Keep helper bot running without triggering AuthKeyUnregisteredError on user_client
+    await helper_bot.run_until_disconnected()
 
 
 if __name__ == "__main__":
-    # Ensure active event loop exists for Python 3.14
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
